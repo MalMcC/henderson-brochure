@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     const data = await req.json();
 
     const sections = Object.entries(data)
-      .filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
+	.filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
       .map(([key, value]) => `${key.replace(/_/g, ' ')}:\n${value}`)
       .join('\n\n');
 

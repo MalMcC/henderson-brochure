@@ -10,10 +10,10 @@ export async function POST(req: NextRequest) {
   try {
     const data = await req.json();
 
-    const sections = Object.entries(data)
-      .filter(([_, value]) => value && value.trim() !== '')
-      .map(([key, value]) => `${key.replace(/_/g, ' ')}:\n${value}`)
-      .join('\n\n');
+const sections = Object.entries(data)
+  .filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
+  .map(([key, value]) => `${key.replace(/_/g, ' ')}:\n${value}`)
+  .join('\n\n');
 
     const messages = [
       {

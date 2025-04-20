@@ -1,4 +1,3 @@
-// app/api/generate-brochure/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
@@ -10,10 +9,10 @@ export async function POST(req: NextRequest) {
   try {
     const data = await req.json();
 
-const sections = Object.entries(data)
-  .filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
-  .map(([key, value]) => `${key.replace(/_/g, ' ')}:\n${value}`)
-  .join('\n\n');
+    const sections = Object.entries(data)
+      .filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
+      .map(([key, value]) => `${key.replace(/_/g, ' ')}:\n${value}`)
+      .join('\n\n');
 
     const messages = [
       {
@@ -34,20 +33,18 @@ Use proper formatting, never return plain text. Always include bulletPoints. If 
     ];
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o', // or 'gpt-4-1106-preview' or 'gpt-3.5-turbo' if needed
+      model: 'gpt-4o', // You can swap with 'gpt-3.5-turbo' if needed
       messages,
       temperature: 0.7,
     });
 
-    // Get raw content from the LLM response
     let responseText = completion.choices[0].message?.content ?? '';
 
-    // 👇 Strip markdown-style backticks or ```json wrappers if present
+    // 🔧 Remove Markdown-style code blocks if present
     if (responseText.startsWith('```')) {
       responseText = responseText.replace(/```json|```/g, '').trim();
     }
 
-    // Try parsing the cleaned string as JSON
     try {
       const json = JSON.parse(responseText);
       return NextResponse.json(json);

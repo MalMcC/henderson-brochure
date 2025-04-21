@@ -1,4 +1,3 @@
-// app/api/generate-brochure/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
@@ -8,10 +7,10 @@ const openai = new OpenAI({
 
 export async function POST(req: NextRequest) {
   try {
-    // 1) Parse the incoming JSON
+    // 1. Parse request JSON
     const data: Record<string, unknown> = await req.json();
 
-    // 2) Build the "sections" string, only trimming when it's a real string
+    // 2. Build 'sections' only from string inputs
     const sections = Object.entries(data)
       .filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
       .map(
@@ -20,7 +19,7 @@ export async function POST(req: NextRequest) {
       )
       .join('\n\n');
 
-    // 3) Prepare the messages for the LLM
+    // 3. Prepare messages
     const messages = [
       {
         role: 'system',
@@ -31,7 +30,7 @@ export async function POST(req: NextRequest) {
   "bulletPoints": ["Feature: Description", "Feature: Description", ...]
 }
 
-Use proper formatting, never return plain text. Always include bulletPoints. If bullet point data is limited, summarise key highlights like 'Tennis Court: Private court set within 5-acre grounds'.`,
+Use proper formatting, never return plain text. Always include bulletPoints.`,
       },
       {
         role: 'user',
@@ -39,34 +38,31 @@ Use proper formatting, never return plain text. Always include bulletPoints. If 
       },
     ];
 
-    // 4) Call the API — we cast to any here so TS will stop complaining about overloads
-    const completion = await (openai.chat.completions
-      .create as any)({
-      model: 'gpt-3.5-turbo', // guaranteed to compile; swap back to gpt-4* once your account & types align
+    // 4. Call OpenAI (ignore TS overload complaints here)
+    // @ts-ignore
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
       messages,
       temperature: 0.7,
     });
 
-    // 5) Clean out any ```json…``` wrappers
-    let responseText = completion.choices[0].message?.content || '';
+    // 5. Clean up any ```json … ``` wrappers
+    let responseText = completion.choices[0]?.message?.content ?? '';
     if (responseText.startsWith('```')) {
       responseText = responseText.replace(/```json|```/g, '').trim();
     }
 
-    // 6) Try parsing it
+    // 6. Parse and return or fallback
     try {
       const result = JSON.parse(responseText);
       return NextResponse.json(result);
-    } catch (parseErr) {
+    } catch {
       console.error('Invalid JSON from OpenAI:', responseText);
-      return NextResponse.json(
-        {
-          headline: '',
-          summary: '',
-          bulletPoints: ['No bullet points returned.'],
-        },
-        { status: 200 }
-      );
+      return NextResponse.json({
+        headline: '',
+        summary: '',
+        bulletPoints: ['No bullet points returned.'],
+      });
     }
   } catch (err) {
     console.error('Error in /api/generate-brochure:', err);

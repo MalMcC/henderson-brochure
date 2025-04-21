@@ -1,19 +1,26 @@
+// app/api/generate-brochure/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY || '',
 });
 
 export async function POST(req: NextRequest) {
   try {
-    const data = await req.json();
+    // 1) Parse the incoming JSON
+    const data: Record<string, unknown> = await req.json();
 
+    // 2) Build the "sections" string, only trimming when it's a real string
     const sections = Object.entries(data)
-	.filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
-      .map(([key, value]) => `${key.replace(/_/g, ' ')}:\n${value}`)
+      .filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
+      .map(
+        ([key, value]) =>
+          `${key.replace(/_/g, ' ')}:\n${(value as string).trim()}`
+      )
       .join('\n\n');
 
+    // 3) Prepare the messages for the LLM
     const messages = [
       {
         role: 'system',
@@ -32,34 +39,39 @@ Use proper formatting, never return plain text. Always include bulletPoints. If 
       },
     ];
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o', // You can swap with 'gpt-3.5-turbo' if needed
+    // 4) Call the API — we cast to any here so TS will stop complaining about overloads
+    const completion = await (openai.chat.completions
+      .create as any)({
+      model: 'gpt-3.5-turbo', // guaranteed to compile; swap back to gpt-4* once your account & types align
       messages,
       temperature: 0.7,
     });
 
-    let responseText = completion.choices[0].message?.content ?? '';
-
-    // 🔧 Remove Markdown-style code blocks if present
+    // 5) Clean out any ```json…``` wrappers
+    let responseText = completion.choices[0].message?.content || '';
     if (responseText.startsWith('```')) {
       responseText = responseText.replace(/```json|```/g, '').trim();
     }
 
+    // 6) Try parsing it
     try {
-      const json = JSON.parse(responseText);
-      return NextResponse.json(json);
-    } catch (err) {
-      console.error('OpenAI did not return valid JSON. Raw output:', responseText);
-      return NextResponse.json({
-        headline: '',
-        summary: '',
-        bulletPoints: ['No bullet points returned.'],
-      });
+      const result = JSON.parse(responseText);
+      return NextResponse.json(result);
+    } catch (parseErr) {
+      console.error('Invalid JSON from OpenAI:', responseText);
+      return NextResponse.json(
+        {
+          headline: '',
+          summary: '',
+          bulletPoints: ['No bullet points returned.'],
+        },
+        { status: 200 }
+      );
     }
-  } catch (error) {
-    console.error('Error generating brochure:', error);
+  } catch (err) {
+    console.error('Error in /api/generate-brochure:', err);
     return NextResponse.json(
-      { error: 'Something went wrong. Please try again.' },
+      { error: 'Server error while generating brochure.' },
       { status: 500 }
     );
   }

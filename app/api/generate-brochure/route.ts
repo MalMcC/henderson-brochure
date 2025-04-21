@@ -1,6 +1,6 @@
 // app/api/generate-brochure/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI, { ChatCompletionCreateParams } from 'openai';
+import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || '',
@@ -8,10 +8,10 @@ const openai = new OpenAI({
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Parse the incoming JSON
+    // 1) Parse JSON body
     const data: Record<string, unknown> = await req.json();
 
-    // 2. Build the sections string, only trimming real strings
+    // 2) Build sections (only trim when it's truly a string)
     const sections = Object.entries(data)
       .filter(([_, value]) => typeof value === 'string' && value.trim() !== '')
       .map(
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       )
       .join('\n\n');
 
-    // 3. Construct the messages for the LLM
+    // 3) Create messages array
     const messages = [
       {
         role: 'system',
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   "bulletPoints": ["Feature: Description", "Feature: Description", ...]
 }
 
-Use proper formatting, never return plain text. Always include bulletPoints. If bullet point data is limited, summarise key highlights like 'Tennis Court: Private court set within 5-acre grounds'.`,
+Use proper formatting, never return plain text. Always include bulletPoints.`,
       },
       {
         role: 'user',
@@ -39,35 +39,30 @@ Use proper formatting, never return plain text. Always include bulletPoints. If 
       },
     ];
 
-    // 4. Prepare and type‑safe the API call params
-    const params: ChatCompletionCreateParams = {
-      model: 'gpt-3.5-turbo',  // or 'gpt-4-1106-preview' / 'gpt-4o' once available
+    // 4) Call OpenAI—cast to any to bypass overload/type errors
+    const completion = await (openai.chat.completions.create as any)({
+      model: 'gpt-3.5-turbo', // swap to your GPT-4 model when supported
       messages,
       temperature: 0.7,
-    };
+    });
 
-    const completion = await openai.chat.completions.create(params);
-
-    // 5. Strip markdown code fences if present
+    // 5) Strip any ```json … ``` wrappers
     let responseText = completion.choices[0]?.message?.content ?? '';
     if (responseText.startsWith('```')) {
       responseText = responseText.replace(/```json|```/g, '').trim();
     }
 
-    // 6. Parse JSON or fallback
+    // 6) Parse JSON or fallback with an empty result
     try {
       const result = JSON.parse(responseText);
       return NextResponse.json(result);
-    } catch (parseErr) {
+    } catch {
       console.error('Invalid JSON from OpenAI:', responseText);
-      return NextResponse.json(
-        {
-          headline: '',
-          summary: '',
-          bulletPoints: ['No bullet points returned.'],
-        },
-        { status: 200 }
-      );
+      return NextResponse.json({
+        headline: '',
+        summary: '',
+        bulletPoints: ['No bullet points returned.'],
+      });
     }
   } catch (err) {
     console.error('Error in /api/generate-brochure:', err);

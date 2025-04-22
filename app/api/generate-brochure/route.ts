@@ -1,33 +1,61 @@
+// app/api/generate-brochure/route.ts
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-const openai = new OpenAI()
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+})
 
-export async function POST(req: Request) {
-  const data = await req.json()
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
 
-  const userPrompt = `
-You are Henderson Connellan’s brochure‑writer.  Given the property data below, produce a JSON object with three keys:
-1) headline – a short (2–6 word), bold, catchy title that captures the essence of the property  
-2) summary – 200–300 words, formal but enthusiastic, describing the main features, surroundings and lifestyle  
-3) bulletPoints – an array of concise bullet points, one for each non‑empty field in the data
+    // Collect only non‑empty strings
+    const messages: { role: 'user'; content: string }[] = []
+    for (const [, v] of Object.entries(body)) {
+      if (typeof v === 'string') {
+        const trimmed = v.trim()
+        if (trimmed !== '') {
+          messages.push({ role: 'user', content: trimmed })
+        }
+      }
+    }
 
-Here is the raw input JSON (do not invent extra fields):
+    if (messages.length === 0) {
+      return NextResponse.json({ error: 'No valid input provided' }, { status: 400 })
+    }
 
-\`\`\`json
-${JSON.stringify(data, null, 2)}
-\`\`\`
-`
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',     // or 'gpt-3.5-turbo'
+      messages,
+      temperature: 0.7,
+    })
 
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4o',   // or 'gpt-3.5-turbo'
-    temperature: 0.7,
-    messages: [
-      { role: 'system', content: 'You are a helpful real‑estate brochure writer.' },
-      { role: 'user',   content: userPrompt }
-    ],
-  })
+    const choice = completion.choices?.[0]
+    const msg = choice?.message
+    const content = msg?.content
 
-  const msg = completion.choices[0].message!
-  return NextResponse.json(JSON.parse(msg.content))
+    if (typeof content !== 'string') {
+      return NextResponse.json(
+        { error: 'Invalid response from OpenAI' },
+        { status: 500 }
+      )
+    }
+
+    // Try to parse JSON; if it fails, return the raw text
+    let output: unknown
+    try {
+      output = JSON.parse(content)
+    } catch {
+      output = { text: content }
+    }
+
+    return NextResponse.json(output)
+  } catch (err: any) {
+    console.error('🛑 generate-brochure error:', err)
+    return NextResponse.json(
+      { error: err.message || 'Unknown error' },
+      { status: 500 }
+    )
+  }
 }

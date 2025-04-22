@@ -3,53 +3,60 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,  // make sure this env var exists
+  apiKey: process.env.OPENAI_API_KEY || '',
 });
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-
-    // 1) Gather only non‑empty string inputs
-    const messages = Object.entries(body)
+    // 1) Read all the inputs and only keep non‑empty strings
+    const data: Record<string, unknown> = await req.json();
+    const sections = Object.entries(data)
       .filter(([_, v]) => typeof v === 'string' && v.trim() !== '')
-      .map(([_, v]) => ({
-        role: 'user' as const,
-        content: v.trim(),
-      }));
+      .map(
+        ([k, v]) =>
+          `${k.replace(/_/g, ' ')}:\n${(v as string).trim()}`
+      )
+      .join('\n\n');
 
-    if (messages.length === 0) {
-      return NextResponse.json({ error: 'No valid input provided' }, { status: 400 });
-    }
+    // 2) Build the system + user messages
+    const messages = [
+      {
+        role: 'system',
+        content: `You are a senior brochure writer for Henderson Connellan. 
+Given detailed room/property input, return EXACTLY valid JSON with keys:
+  "headline"   – a short, 2–6 word, bold, catchy title  
+  "summary"    – 200–300 word professional, emotive summary  
+  "bulletPoints" – array of "Feature: Description" strings
 
-    // 2) Call the LLM
+Always output JSON only.`,
+      },
+      {
+        role: 'user',
+        content: `Property Details:\n\n${sections}\n\nRespond ONLY in JSON with keys headline, summary, bulletPoints.`,
+      },
+    ];
+
+    // 3) Call OpenAI
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',   // swap to gpt-4o when you have access
+      model: 'gpt-3.5-turbo', // use a model you have access to
       messages,
       temperature: 0.7,
     });
 
-    // 3) Extract and narrow the content
-    const choice = completion.choices[0];
-    const msg = choice.message!;
-    const content = msg.content;
-    if (!content) {
-      return NextResponse.json({ error: 'AI returned no content' }, { status: 502 });
+    // 4) Extract into a JS string (never string|null)
+    let responseText = completion.choices[0].message?.content ?? '';
+    if (responseText.startsWith('```')) {
+      responseText = responseText.replace(/```json|```/g, '').trim();
     }
 
-    // 4) Parse JSON (or fallback to raw text)
-    let output: unknown;
-    try {
-      output = JSON.parse(content);
-    } catch {
-      output = { text: content };
-    }
+    // 5) Parse it safely
+    const result = JSON.parse(responseText);
 
-    return NextResponse.json(output);
+    return NextResponse.json(result);
   } catch (err: any) {
     console.error('🛑 generate-brochure error:', err);
     return NextResponse.json(
-      { error: err.message || 'Unknown error' },
+      { error: err.message || 'Something went wrong' },
       { status: 500 }
     );
   }
